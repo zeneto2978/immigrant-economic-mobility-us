@@ -1,85 +1,98 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from sqlalchemy import create_engine
 
 # ---------------------------------------------------
 # CONFIGURAÇÃO GERAL
 # ---------------------------------------------------
 st.set_page_config(
     page_title="Immigrant Economic Mobility",
+    page_icon="📊",
     layout="wide"
 )
 
 # ---------------------------------------------------
-# CONEXÃO COM O POSTGRESQL
-# ---------------------------------------------------
-USER = "postgres"
-PASSWORD = "postgres"
-HOST = "localhost"
-PORT = "5433"
-DATABASE = "immigrant_mobility_db"
-
-engine = create_engine(
-    f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DATABASE}"
-)
-
-# ---------------------------------------------------
-# FUNÇÃO PARA BUSCAR DADOS
+# CARREGAR DADOS DO CSV
 # ---------------------------------------------------
 @st.cache_data
 def load_data():
-    query = "SELECT * FROM immigrant_data"
-    return pd.read_sql(query, engine)
+    return pd.read_csv("data/raw/immigrant_data.csv")
 
 df = load_data()
 
 # ---------------------------------------------------
-# SIDEBAR
+# AJUSTES / LIMPEZA BÁSICA
+# ---------------------------------------------------
+df["annual_income"] = pd.to_numeric(df["annual_income"], errors="coerce")
+df["stress_level"] = pd.to_numeric(df["stress_level"], errors="coerce")
+df["job_satisfaction"] = pd.to_numeric(df["job_satisfaction"], errors="coerce")
+df["hours_per_week"] = pd.to_numeric(df["hours_per_week"], errors="coerce")
+df["years_in_us"] = pd.to_numeric(df["years_in_us"], errors="coerce")
+
+df = df.dropna()
+
+# ---------------------------------------------------
+# SIDEBAR - FILTROS
 # ---------------------------------------------------
 st.sidebar.title("Filters")
 
 selected_country = st.sidebar.multiselect(
     "Origin",
-    sorted(df["country_of_origin"].unique()),
+    options=sorted(df["country_of_origin"].unique()),
     default=sorted(df["country_of_origin"].unique())
 )
 
 selected_entry = st.sidebar.multiselect(
     "Entry Path",
-    sorted(df["entry_type"].unique()),
+    options=sorted(df["entry_type"].unique()),
     default=sorted(df["entry_type"].unique())
 )
 
-selected_profession = st.sidebar.multiselect(
+selected_current_profession = st.sidebar.multiselect(
     "Current Profession",
-    sorted(df["current_profession"].unique()),
+    options=sorted(df["current_profession"].unique()),
     default=sorted(df["current_profession"].unique())
+)
+
+selected_english = st.sidebar.multiselect(
+    "English Level",
+    options=sorted(df["english_level"].unique()),
+    default=sorted(df["english_level"].unique())
 )
 
 filtered_df = df[
     (df["country_of_origin"].isin(selected_country)) &
     (df["entry_type"].isin(selected_entry)) &
-    (df["current_profession"].isin(selected_profession))
+    (df["current_profession"].isin(selected_current_profession)) &
+    (df["english_level"].isin(selected_english))
 ]
 
 # ---------------------------------------------------
 # HEADER
 # ---------------------------------------------------
 st.title("Immigrant Economic Mobility in the U.S.")
-st.caption("BI-style dashboard built with PostgreSQL + SQL + Streamlit")
+st.caption("BI-style dashboard built with Streamlit + Plotly")
 
 # ---------------------------------------------------
 # KPIs
 # ---------------------------------------------------
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
-kpi1.metric("Total People", f"{len(filtered_df):,}")
-kpi2.metric("Average Income", f"${filtered_df['annual_income'].mean():,.0f}")
-kpi3.metric("Average Stress", f"{filtered_df['stress_level'].mean():.1f}")
-kpi4.metric("Average Satisfaction", f"{filtered_df['job_satisfaction'].mean():.1f}")
+total_people = len(filtered_df)
+avg_income = filtered_df["annual_income"].mean() if total_people > 0 else 0
+avg_stress = filtered_df["stress_level"].mean() if total_people > 0 else 0
+avg_satisfaction = filtered_df["job_satisfaction"].mean() if total_people > 0 else 0
+
+kpi1.metric("Total People", f"{total_people:,}")
+kpi2.metric("Average Income", f"${avg_income:,.0f}")
+kpi3.metric("Average Stress", f"{avg_stress:.1f}")
+kpi4.metric("Average Satisfaction", f"{avg_satisfaction:.1f}")
 
 st.divider()
+
+if filtered_df.empty:
+    st.warning("No data found for the selected filters.")
+    st.stop()
 
 # ---------------------------------------------------
 # TABS
@@ -107,7 +120,8 @@ with tab1:
         income_by_entry,
         x="entry_type",
         y="annual_income",
-        title="Average Income by Entry Path"
+        title="Average Income by Entry Path",
+        text_auto=".2s"
     )
     row1_col1.plotly_chart(fig_income_entry, use_container_width=True)
 
@@ -121,7 +135,8 @@ with tab1:
         income_by_english,
         x="english_level",
         y="annual_income",
-        title="Average Income by English Level"
+        title="Average Income by English Level",
+        text_auto=".2s"
     )
     row1_col2.plotly_chart(fig_income_english, use_container_width=True)
 
@@ -151,7 +166,8 @@ with tab1:
         profession_income,
         x="current_profession",
         y="annual_income",
-        title="Average Income by Current Profession"
+        title="Average Income by Current Profession",
+        text_auto=".2s"
     )
     row2_col2.plotly_chart(fig_prof_income, use_container_width=True)
 
@@ -206,7 +222,8 @@ with tab3:
         stress_by_profession,
         x="current_profession",
         y="stress_level",
-        title="Average Stress by Current Profession"
+        title="Average Stress by Current Profession",
+        text_auto=".2f"
     )
     row3_col1.plotly_chart(fig_stress, use_container_width=True)
 
@@ -220,7 +237,8 @@ with tab3:
         satisfaction_by_profession,
         x="current_profession",
         y="job_satisfaction",
-        title="Average Satisfaction by Current Profession"
+        title="Average Satisfaction by Current Profession",
+        text_auto=".2f"
     )
     row3_col2.plotly_chart(fig_satisfaction, use_container_width=True)
 
@@ -230,7 +248,12 @@ with tab3:
         y="stress_level",
         color="current_profession",
         size="annual_income",
-        hover_data=["country_of_origin", "entry_type", "previous_profession"],
+        hover_data=[
+            "country_of_origin",
+            "entry_type",
+            "previous_profession",
+            "english_level"
+        ],
         title="Workload vs Stress"
     )
     st.plotly_chart(fig_hours_stress, use_container_width=True)
