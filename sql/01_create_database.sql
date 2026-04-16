@@ -1,0 +1,1 @@
+CREATE DATABASE immigrant_mobility_db;
